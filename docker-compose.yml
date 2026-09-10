@@ -1,0 +1,39 @@
+# Local PostgreSQL + PostGIS for development and integration tests.
+#
+# The field deployment runs PostgreSQL directly on the ground station machine
+# (see docs/deployment.md). This compose file is for a development laptop, not
+# for the mission network.
+
+services:
+  postgis:
+    image: postgis/postgis:16-3.4
+    container_name: nidar-postgis
+    environment:
+      POSTGRES_USER: gcs
+      POSTGRES_PASSWORD: gcs
+      POSTGRES_DB: nidar_gcs
+    ports:
+      - "5432:5432"
+    volumes:
+      - nidar_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U gcs -d nidar_gcs"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  postgis-test:
+    image: postgis/postgis:16-3.4
+    container_name: nidar-postgis-test
+    environment:
+      POSTGRES_USER: gcs
+      POSTGRES_PASSWORD: gcs
+      POSTGRES_DB: nidar_gcs_test
+    ports:
+      - "5433:5432"
+    tmpfs:
+      - /var/lib/postgresql/data
+    profiles: ["test"]
+
+volumes:
+  nidar_pgdata:

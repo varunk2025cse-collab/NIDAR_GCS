@@ -1,0 +1,58 @@
+# Camera and video stream inventory.
+#
+# The GCS backend owns camera *metadata* only. Video itself goes straight from
+# the Raspberry Pi to the operator machine over the local network -- relaying
+# three H.264 streams through the API process would add latency to the picture
+# an operator uses to make decisions, and would compete with flight
+# supervision for the event loop.
+#
+# stream_url is what the frontend player connects to. Point it at the
+# companion computer, not at this backend.
+
+cameras:
+  - camera_id: d1-front
+    drone_id: D1
+    label: D1 - Scout (Front Camera)
+    kind: VISIBLE
+    protocol: RTSP
+    stream_url: "rtsp://192.168.1.11:8554/front"
+    resolution: 1280x720
+    framerate: 30
+    # The onboard detector draws its boxes on this feed.
+    ai_overlay: true
+    enabled: true
+
+  - camera_id: d1-thermal
+    drone_id: D1
+    label: D1 - Thermal Camera
+    kind: THERMAL
+    protocol: RTSP
+    stream_url: "rtsp://192.168.1.11:8554/thermal"
+    resolution: 640x480
+    framerate: 9
+    ai_overlay: true
+    enabled: true
+
+  - camera_id: d2-front
+    drone_id: D2
+    label: D2 - Scout (Front Camera)
+    kind: VISIBLE
+    protocol: RTSP
+    stream_url: "rtsp://192.168.1.12:8554/front"
+    resolution: 1280x720
+    framerate: 30
+    ai_overlay: true
+    enabled: true
+
+  - camera_id: d3-front
+    drone_id: D3
+    label: D3 - Delivery (Front Camera)
+    kind: VISIBLE
+    protocol: RTSP
+    stream_url: "rtsp://192.168.1.13:8554/front"
+    resolution: 1280x720
+    framerate: 30
+    # No detector on the delivery aircraft; this feed is for the operator
+    # to watch the release and confirm it.
+    ai_overlay: false
+    enabled: true

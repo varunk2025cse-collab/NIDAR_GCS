@@ -1,0 +1,41 @@
+# Delivery energy model -- MEASURED characteristics of one delivery airframe.
+#
+# Copy to config/energy_model.yaml ONLY by running:
+#
+#     python -m scripts.calibrate_energy compute --airframe D3-1 --by "name"
+#
+# Do not hand-write this file. The whole point of the calibration record is
+# that the coefficients came off a real aircraft; a hand-edited file asserts a
+# measurement that never happened, and the delivery feasibility check will
+# then authorise dispatches on the strength of it.
+#
+# While config/energy_model.yaml is absent, the model is UNCALIBRATED and
+# delivery dispatch is refused. That is the correct state for a new system.
+
+calibration:
+  calibrated: true
+  calibrated_on: "2026-09-10"
+  calibrated_by: "operator name"
+  airframe: "D3-airframe-1"
+  method: "least-squares fit over 6 measured flights"
+  sample_count: 6
+  notes: "1.2 kg payload, 3-5 m/s wind, 28 C"
+
+# --- fitted from measurement flights ---
+battery_pct_per_km: 6.25
+battery_pct_per_minute_hover: 2.07
+takeoff_landing_overhead_pct: 1.21
+
+# --- conservatism factors, applied on top of the fit ---
+# Transit cost multiplier while carrying the payload.
+payload_factor: 1.15
+# Conditions on the day. Raise before flying in wind.
+environmental_factor: 1.10
+# Final margin on the whole estimate.
+safety_margin_factor: 1.15
+
+# --- mission assumptions ---
+cruise_speed_mps: 8.0
+hover_time_s: 45.0
+# Battery that must remain after the aircraft is home.
+reserve_pct: 25.0

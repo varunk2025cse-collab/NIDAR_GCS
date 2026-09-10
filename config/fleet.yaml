@@ -1,0 +1,50 @@
+# NIDAR RescueSwarm -- physical fleet definition
+#
+# This file declares which real airframes exist, what MAVLink identity each one
+# transmits, and where the GCS reaches it. It is the authority for identity:
+# an endpoint that answers with a different system_id is refused rather than
+# adopted, so a delivery command can never reach a scout.
+#
+# Endpoints below assume MAVLink Router on the GCS machine fanning each
+# aircraft radio out to its own local UDP port. Replace them with the real
+# addresses of your ground radios or companion computers.
+#
+# An endpoint (and only an endpoint) may be overridden per drone with an
+# environment variable, e.g. DRONE_D1_CONNECTION=udpin://0.0.0.0:14541
+#
+# After the first flight, read the hardware_uid each aircraft reported from
+# GET /api/v1/drones/registry and paste it into expected_hardware_uid below.
+# From then on the GCS refuses to fly an airframe swap it was not told about.
+
+drones:
+  - drone_id: D1
+    name: Scout One
+    role: SCOUT
+    system_id: 1
+    component_id: 1
+    connection_endpoint: "udpin://0.0.0.0:14541"
+    mavsdk_server_port: 50051
+    expected_hardware_uid: null
+    enabled: true
+
+  - drone_id: D2
+    name: Scout Two
+    role: SCOUT
+    system_id: 2
+    component_id: 1
+    connection_endpoint: "udpin://0.0.0.0:14542"
+    mavsdk_server_port: 50052
+    expected_hardware_uid: null
+    enabled: true
+
+  - drone_id: D3
+    name: Delivery One
+    role: DELIVERY
+    system_id: 3
+    component_id: 1
+    connection_endpoint: "udpin://0.0.0.0:14543"
+    mavsdk_server_port: 50053
+    # Maximum payload this airframe is cleared to carry, in grams.
+    payload_capacity_g: 1500
+    expected_hardware_uid: null
+    enabled: true
