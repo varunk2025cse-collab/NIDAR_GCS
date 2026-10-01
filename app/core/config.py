@@ -296,6 +296,16 @@ class Settings(BaseSettings):
     # file means UNCALIBRATED, which blocks delivery dispatch.
     energy_model_file: str = "config/energy_model.yaml"
 
+    # --- operator console (served locally; never from a CDN) --------------
+    # Pre-downloaded basemap tiles, laid out as {z}/{x}/{y}.jpg. Mounted at
+    # /tiles only when the directory exists, so a station with no cached
+    # imagery behaves exactly as before. The console degrades to a coordinate
+    # grid rather than failing.
+    tile_dir: str = "tiles"
+    # Built frontend (`npm run build` in frontend/). Served at /console when
+    # present so the ground station needs no second web server.
+    console_dist_dir: str = "frontend/dist"
+
     # Which physical mechanism attests that a payload was actually released.
     # OPERATOR is the safe default: it requires a human to say so rather than
     # assuming a release that no sensor observed. Change it to

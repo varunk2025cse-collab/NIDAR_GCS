@@ -71,6 +71,16 @@ MAVLink Router configuration.
 API docs at `/docs`. Full setup, including MAVLink Router and PX4 parameters,
 in [`docs/deployment.md`](docs/deployment.md).
 
+Then build the operator console, which the backend serves at `/console`:
+
+```bash
+cd frontend && npm install && npm run build
+```
+
+It renders backend state and nothing else — no client-side state machines, no
+invented values. How it keeps that promise, and how the map works with no
+Internet, is in [`frontend/README.md`](frontend/README.md).
+
 **Before flying anything**, work through
 [`docs/hardware-validation.md`](docs/hardware-validation.md) from stage 1. It
 is staged so that the first time a motor turns, everything upstream of it has
@@ -93,6 +103,8 @@ config/         fleet.yaml, cameras.yaml
 alembic/        migrations
 docs/           architecture, deployment, hardware validation, WS contract
 tests/          unit (no hardware), integration (needs DB), hardware (opt-in)
+frontend/       operator console (React + MapLibre); built to frontend/dist
+tiles/          optional pre-cached basemap imagery, served at /tiles
 ```
 
 ## Configuration

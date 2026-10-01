@@ -71,7 +71,7 @@ All from `FLEET_SNAPSHOT` then `TELEMETRY_UPDATED`, via TelemetryService ← MAV
 | Delivery route | `map` → `delivery_routes` | DeliveryManager | Backend | The *planned* route; flown path is in the trail |
 | Launch point | `map` → `launch_point` | MissionManager | Operator | Surveyed before the mission |
 | Scale bar, compass | — | — | Frontend | |
-| **Satellite / Terrain / Hybrid tabs** | — | — | **NOT IMPLEMENTED** | Base map tiles are a frontend concern. Mission operation must work offline, so tiles must be pre-cached locally. The backend serves no tiles. |
+| Satellite / Street / Cached / None basemap tabs | frontend `src/map/basemaps.ts` | — | Tile provider, or locally cached imagery | Implemented in the console. Offline-first: default source is tiles cached on the ground station and served by the backend at `/tiles`. Online satellite and street are opt-in and disabled while the machine is offline. When imagery is unavailable the map reports `BASEMAP UNAVAILABLE` and keeps every operational layer rendering over a coordinate grid — imagery is never required to fly. Cache an area with `frontend/scripts/cache-tiles.mjs`, subject to your tile provider's terms. |
 
 ### Sector coverage is not a percentage by default
 
@@ -186,12 +186,16 @@ failure at the moment a survivor needs aid.
 
 Summary of everything above that the frontend must **not** render as a value:
 
-| Field | Why | What to do |
+| Field | Why | What the console does |
 |---|---|---|
-| ROS 2 Bridge health | No ROS 2 in this system | Remove the row |
-| Power System health | No GCS power telemetry collected | Remove the row, or add a real UPS monitor |
-| Satellite / Terrain / Hybrid map tiles | Frontend tile source; must be offline-cached | Frontend concern |
-| Camera pan/tilt/zoom | No gimbal control endpoint | Hide the controls |
-| Airspeed / rangefinder in Sensors tab | Not collected from PX4 | Omit, or add the telemetry streams first |
-| Video LIVE badge as proof of frames | Backend only proves reachability | Use the player's state |
-| Detection overlay boxes | Burnt in by the companion computer | Use the stream as-is |
+| ROS 2 Bridge health | No ROS 2 in this system | Rendered struck through as `NOT IMPLEMENTED`, with a tooltip. Never `OK` |
+| Power System health | No GCS power telemetry collected | Same. Add a real UPS monitor to populate it |
+| Camera pan/tilt/zoom | No gimbal control endpoint | Controls not rendered at all |
+| Airspeed / rangefinder in Sensors tab | Not collected from PX4 | Listed as `NOT IMPLEMENTED` in the Sensors tab |
+| Video LIVE badge as proof of frames | Backend only proves reachability | Badge reads `REACHABLE`, not `LIVE` |
+| Detection overlay boxes | Burnt in by the companion computer | Stream used as-is; no overlay drawn |
+| RTSP video in a browser | Browsers cannot decode RTSP | Tile says so and offers the URL for VLC/mpv, rather than showing black |
+
+Every one of these is visible in the console as an explicit "no source" state.
+None of them is rendered as a value, and none is silently omitted — an operator
+who expects a row from the blueprint can see why it is empty.

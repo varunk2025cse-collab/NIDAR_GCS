@@ -17,3 +17,11 @@ htmlcov/
 .DS_Store
 .idea/
 .vscode/
+
+# operator console
+node_modules/
+frontend/dist/
+frontend/.env
+
+# cached basemap imagery -- large, and licensed from a provider rather than ours
+tiles/

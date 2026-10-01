@@ -9,11 +9,13 @@ from __future__ import annotations
 import uuid
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.api import (
@@ -203,6 +205,35 @@ app.include_router(system.router, prefix=prefix)
 app.include_router(websocket.router)
 
 
+# ---------------------------------------------------------------------------
+# locally served static assets
+#
+# Both mounts are conditional on the directory existing, so a station that has
+# not cached imagery or built the console is unaffected. Nothing here reaches
+# the Internet: these are files on the ground station's own disk, which is what
+# lets the console and its basemap work on an isolated mission network.
+# ---------------------------------------------------------------------------
+_tile_dir = Path(settings.tile_dir)
+_tiles_available = _tile_dir.is_dir()
+if _tiles_available:
+    app.mount("/tiles", StaticFiles(directory=_tile_dir), name="tiles")
+    logger.info("basemap_tiles_mounted", path=str(_tile_dir.resolve()))
+else:
+    logger.info(
+        "basemap_tiles_absent",
+        path=str(_tile_dir),
+        detail="console will fall back to a coordinate grid or an online source",
+    )
+
+_console_dir = Path(settings.console_dist_dir)
+_console_available = _console_dir.is_dir()
+if _console_available:
+    # html=True serves index.html for unknown paths, which a single-page
+    # console needs for deep links.
+    app.mount("/console", StaticFiles(directory=_console_dir, html=True), name="console")
+    logger.info("operator_console_mounted", path=str(_console_dir.resolve()))
+
+
 @app.get("/", include_in_schema=False)
 async def root() -> dict:
     return {
@@ -211,4 +242,6 @@ async def root() -> dict:
         "api": prefix,
         "docs": "/docs",
         "websockets": ["/ws/fleet", "/ws/events", "/ws/mission/{id}", "/ws/drone/{id}"],
+        "console": "/console" if _console_available else None,
+        "tiles": "/tiles" if _tiles_available else None,
     }
