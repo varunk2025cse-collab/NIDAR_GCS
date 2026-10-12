@@ -4,12 +4,16 @@
  * `<Value>` is the only thing in this console allowed to render a measured
  * number. It cannot be made to show a plausible default: if the value is
  * `null`, or its freshness is `NO_DATA`, it renders a dash. There is no prop
- * that overrides that, deliberately -- a battery gauge reading 78% must mean
- * the aircraft said 78% and said it recently.
+ * that overrides that, deliberately -- a battery gauge reading 92% must mean
+ * the aircraft said 92% and said it recently.
+ *
+ * Status is never encoded by colour alone: every coloured state also carries a
+ * word or an icon, so it survives greyscale and colour-blindness.
  */
 
 import type { ReactNode } from "react";
 import type { CheckStatus, ComponentStatus, Freshness } from "../api/types";
+import { Icon, type IconName } from "./common/Icon";
 
 /* -------------------------------------------------------------------------- */
 /* Value                                                                      */
@@ -19,9 +23,7 @@ interface ValueProps {
   value: number | string | boolean | null | undefined;
   status?: Freshness | null;
   unit?: string;
-  /** Decimal places for numeric values. */
   digits?: number;
-  /** Shown instead of a number when there is nothing to show. */
   placeholder?: string;
   className?: string;
 }
@@ -38,9 +40,9 @@ export function Value({
 
   if (missing) {
     return (
-      <span className={`value value--missing ${className}`} title="No data from the aircraft">
-        <span className="value__number">{placeholder}</span>
-        {status ? <span className="value__tag">NO DATA</span> : null}
+      <span className={`val val--missing ${className}`} title="No data from the aircraft">
+        <span className="val__n">{placeholder}</span>
+        {status ? <span className="val__tag">NO DATA</span> : null}
       </span>
     );
   }
@@ -57,11 +59,11 @@ export function Value({
   const stale = status === "STALE";
 
   return (
-    <span className={`value ${stale ? "value--stale" : ""} ${className}`}>
-      <span className="value__number">{text}</span>
-      {unit ? <span className="value__unit">{unit}</span> : null}
+    <span className={`val ${stale ? "val--stale" : ""} ${className}`}>
+      <span className="val__n">{text}</span>
+      {unit ? <span className="val__u">{unit}</span> : null}
       {stale ? (
-        <span className="value__tag value__tag--stale" title="Last known value; no longer fresh">
+        <span className="val__tag val__tag--stale" title="Last known value; no longer fresh">
           STALE
         </span>
       ) : null}
@@ -69,35 +71,33 @@ export function Value({
   );
 }
 
-/* -------------------------------------------------------------------------- */
-/* Not implemented                                                            */
-/* -------------------------------------------------------------------------- */
-
 /**
- * For dashboard fields with no physical source. The mockup contains several
- * (ROS 2 bridge, ground power); rendering them as OK would be a lie, so they
- * render as this instead. See docs/dashboard-data-sources.md.
+ * For dashboard fields with no physical source. The blueprint contains several
+ * (ROS 2 bridge, ground power); rendering them as OK would be a lie.
+ * See docs/dashboard-data-sources.md.
  */
 export function NotImplemented({ why }: { why: string }) {
   return (
-    <span className="not-implemented" title={why}>
+    <span className="notimpl" title={why}>
       NOT IMPLEMENTED
     </span>
   );
 }
 
 /* -------------------------------------------------------------------------- */
-/* Panels and layout                                                          */
+/* Layout                                                                     */
 /* -------------------------------------------------------------------------- */
 
 export function Panel({
   title,
+  icon,
   actions,
   children,
   className = "",
   bodyClassName = "",
 }: {
   title?: ReactNode;
+  icon?: IconName;
   actions?: ReactNode;
   children: ReactNode;
   className?: string;
@@ -106,33 +106,58 @@ export function Panel({
   return (
     <section className={`panel ${className}`}>
       {title ? (
-        <header className="panel__head">
-          <h2 className="panel__title">{title}</h2>
-          {actions ? <div className="panel__actions">{actions}</div> : null}
+        <header className="panel__h">
+          <h2 className="panel__t">
+            {icon ? <Icon name={icon} size={13} /> : null}
+            {title}
+          </h2>
+          {actions ? <div className="panel__a">{actions}</div> : null}
         </header>
       ) : null}
-      <div className={`panel__body ${bodyClassName}`}>{children}</div>
+      <div className={`panel__b ${bodyClassName}`}>{children}</div>
     </section>
   );
 }
 
+/** Every empty state is deliberate: a title, a reason, and what would fill it. */
+export function Empty({
+  icon = "grid",
+  title,
+  children,
+}: {
+  icon?: IconName;
+  title: string;
+  children?: ReactNode;
+}) {
+  return (
+    <div className="empty">
+      <Icon name={icon} size={26} className="empty__ic" />
+      <div className="empty__t">{title}</div>
+      {children ? <div className="empty__d">{children}</div> : null}
+    </div>
+  );
+}
+
 /* -------------------------------------------------------------------------- */
-/* Badges                                                                     */
+/* Chips                                                                      */
 /* -------------------------------------------------------------------------- */
 
-export type Tone = "ok" | "warn" | "bad" | "unknown" | "info" | "neutral";
+export type Tone = "ok" | "warn" | "bad" | "unknown" | "info" | "neutral" | "vi";
 
-export function Badge({
+export function Chip({
   tone = "neutral",
   children,
   title,
+  icon,
 }: {
   tone?: Tone;
   children: ReactNode;
   title?: string;
+  icon?: IconName;
 }) {
   return (
-    <span className={`badge badge--${tone}`} title={title}>
+    <span className={`chip chip--${tone}`} title={title}>
+      {icon ? <Icon name={icon} size={10} /> : null}
       {children}
     </span>
   );
@@ -145,7 +170,6 @@ export function connectionTone(state: string): Tone {
     case "DEGRADED":
       return "warn";
     case "DISCONNECTED":
-      return "bad";
     case "ERROR":
       return "bad";
     default:
@@ -181,69 +205,127 @@ export function severityTone(severity: string): Tone {
   }
 }
 
+export function batteryTone(percent: number | null): Tone {
+  if (percent === null) return "unknown";
+  if (percent <= 25) return "bad";
+  if (percent <= 40) return "warn";
+  return "ok";
+}
+
+export function toneVar(tone: Tone): string {
+  switch (tone) {
+    case "ok":
+      return "ok";
+    case "warn":
+      return "warn";
+    case "bad":
+      return "bad";
+    case "info":
+      return "cy";
+    case "vi":
+      return "vi";
+    default:
+      return "unk";
+  }
+}
+
 /* -------------------------------------------------------------------------- */
-/* Gauge                                                                      */
+/* Meter                                                                      */
 /* -------------------------------------------------------------------------- */
 
 /**
- * A radial gauge that renders an empty track when there is no value. It never
+ * A battery bar that draws nothing when there is no reading -- an empty pack
+ * and an unknown pack must not look identical at zero. The reserve marker is
+ * the level below which the aircraft cannot be relied on to get home.
+ */
+export function Meter({
+  percent,
+  status,
+  reservePct = 25,
+}: {
+  percent: number | null;
+  status?: Freshness | null;
+  reservePct?: number;
+}) {
+  const missing = percent === null || percent === undefined || status === "NO_DATA";
+  const tone = batteryTone(missing ? null : percent);
+
+  return (
+    <div
+      className="meter"
+      role="meter"
+      aria-valuenow={missing ? undefined : percent}
+      aria-valuemin={0}
+      aria-valuemax={100}
+      aria-label="Battery"
+      title={missing ? "No battery telemetry" : `${percent}% — reserve threshold ${reservePct}%`}
+    >
+      {!missing ? (
+        <i
+          style={{
+            width: `${Math.max(0, Math.min(100, percent))}%`,
+            background: `var(--${toneVar(tone)})`,
+          }}
+        />
+      ) : null}
+      <span className="meter__res" style={{ left: `${reservePct}%` }} />
+    </div>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+/* Ring gauge                                                                 */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Circular gauge. Renders an empty track when there is no value -- it never
  * falls back to the zero position, because an empty tank and an unknown tank
  * look identical at zero.
  */
-export function Gauge({
-  label,
+export function Ring({
   value,
   status,
-  unit,
-  min = 0,
+  label,
+  unit = "%",
   max = 100,
-  digits = 0,
-  tone = "info",
+  tone,
+  size = 84,
 }: {
-  label: string;
   value: number | null;
   status?: Freshness | null;
+  label: string;
   unit?: string;
-  min?: number;
   max?: number;
-  digits?: number;
   tone?: Tone;
+  size?: number;
 }) {
   const missing = value === null || value === undefined || status === "NO_DATA";
-  const span = max - min || 1;
-  const fraction = missing ? 0 : Math.min(1, Math.max(0, (value - min) / span));
-
-  // 240-degree sweep, starting bottom-left.
-  const radius = 34;
-  const circumference = 2 * Math.PI * radius;
-  const arc = (240 / 360) * circumference;
+  const fraction = missing ? 0 : Math.min(1, Math.max(0, value / max));
+  const r = 36;
+  const c = 2 * Math.PI * r;
+  const effective = tone ?? batteryTone(missing ? null : value);
 
   return (
-    <div className={`gauge ${missing ? "gauge--missing" : ""}`}>
-      <svg viewBox="0 0 90 90" className="gauge__svg" aria-hidden="true">
-        <circle
-          className="gauge__track"
-          cx="45"
-          cy="45"
-          r={radius}
-          strokeDasharray={`${arc} ${circumference}`}
-          transform="rotate(150 45 45)"
-        />
+    <div className="ring" style={{ width: size, height: size }}>
+      <svg viewBox="0 0 84 84" aria-hidden="true">
+        <circle className="ring__track" cx="42" cy="42" r={r} />
         {!missing ? (
           <circle
-            className={`gauge__fill gauge__fill--${tone}`}
-            cx="45"
-            cy="45"
-            r={radius}
-            strokeDasharray={`${arc * fraction} ${circumference}`}
-            transform="rotate(150 45 45)"
+            className="ring__fill"
+            cx="42"
+            cy="42"
+            r={r}
+            stroke={`var(--${toneVar(effective)})`}
+            strokeDasharray={`${c * fraction} ${c}`}
           />
         ) : null}
       </svg>
-      <div className="gauge__readout">
-        <Value value={value} status={status} unit={unit} digits={digits} />
+      <div className="ring__mid">
+        <span className="ring__v">
+          <Value value={value} status={status} unit={unit} />
+        </span>
+        <span className="ring__l">{label}</span>
       </div>
-      <div className="gauge__label">{label}</div>
     </div>
   );
 }
@@ -252,7 +334,7 @@ export function Gauge({
 /* Small helpers                                                              */
 /* -------------------------------------------------------------------------- */
 
-export function Field({
+export function Stat({
   label,
   children,
   hint,
@@ -262,9 +344,9 @@ export function Field({
   hint?: string;
 }) {
   return (
-    <div className="field" title={hint}>
-      <span className="field__label">{label}</span>
-      <span className="field__value">{children}</span>
+    <div className="stat" title={hint}>
+      <span className="stat__k">{label}</span>
+      <span className="stat__v">{children}</span>
     </div>
   );
 }
@@ -280,7 +362,8 @@ export function formatClock(seconds: number | null | undefined): string {
 
 export function formatAge(seconds: number | null): string {
   if (seconds === null) return "no contact";
-  if (seconds < 1) return "now";
+  if (seconds < 1) return "0.0s ago";
+  if (seconds < 10) return `${seconds.toFixed(1)}s ago`;
   if (seconds < 60) return `${seconds.toFixed(0)}s ago`;
   const minutes = Math.floor(seconds / 60);
   if (minutes < 60) return `${minutes}m ago`;

@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="NIDAR RescueSwarm">
+  <!--
+    Three nodes in delta formation over a located target: the whole system in
+    one mark. Two cyan scouts and one violet delivery aircraft (the same colour
+    vocabulary the console uses for SCOUT and DELIVERY), with the amber dot at
+    the centre being a located survivor.
+
+    Drawn to stay legible at 16px: heavy nodes, one accent, no fine detail.
+  -->
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#101a28"/>
+      <stop offset="1" stop-color="#070b12"/>
+    </linearGradient>
+    <linearGradient id="sweep" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#38bdf8" stop-opacity="0.55"/>
+      <stop offset="1" stop-color="#38bdf8" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="64" height="64" rx="14" fill="url(#bg)"/>
+  <rect x="0.75" y="0.75" width="62.5" height="62.5" rx="13.25" fill="none" stroke="#2b3b54" stroke-width="1.5"/>
+
+  <!-- search area: radar ring plus a scan sweep -->
+  <circle cx="32" cy="33" r="19.5" fill="none" stroke="#24405f" stroke-width="2"/>
+  <path d="M32 33 L32 13.5 A19.5 19.5 0 0 1 45.8 19.2 Z" fill="url(#sweep)"/>
+
+  <!-- formation links -->
+  <path d="M32 15 L15.5 43 M32 15 L48.5 43 M15.5 43 L48.5 43"
+        stroke="#2f4a6b" stroke-width="1.75" stroke-linejoin="round" fill="none"/>
+
+  <!-- located survivor -->
+  <circle cx="32" cy="33" r="5" fill="#fbbf24"/>
+
+  <!-- swarm: two scouts, one delivery -->
+  <circle cx="32"   cy="15" r="6.5" fill="#38bdf8"/>
+  <circle cx="15.5" cy="43" r="6.5" fill="#38bdf8"/>
+  <circle cx="48.5" cy="43" r="6.5" fill="#a78bfa"/>
+</svg>

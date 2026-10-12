@@ -31,7 +31,7 @@ export function Chart({ series, gapThresholdS = 10, height = 112 }: ChartProps) 
 
   if (withValues.length < 2) {
     return (
-      <div className="table__empty" style={{ height }}>
+      <div className="empty" style={{ height }}>
         Not enough recorded telemetry to plot.
       </div>
     );

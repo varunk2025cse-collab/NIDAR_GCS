@@ -19,6 +19,7 @@ import type {
   MapResponse,
   Mission,
   Sector,
+  SectorCoverage,
   Survivor,
   SystemHealth,
   TelemetryHistory,
@@ -175,6 +176,9 @@ export const api = {
     get<MapResponse>(`/missions/${missionId}/map`, signal),
   sectors: (missionId: string, signal?: AbortSignal) =>
     get<Sector[] | { sectors: Sector[] }>(`/missions/${missionId}/sectors`, signal),
+
+  sectorCoverage: (missionId: string, signal?: AbortSignal) =>
+    get<SectorCoverage>(`/missions/${missionId}/sectors/coverage`, signal),
 
   survivors: (signal?: AbortSignal) =>
     get<Survivor[] | { survivors: Survivor[] }>("/survivors", signal),

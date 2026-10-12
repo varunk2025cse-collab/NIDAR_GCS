@@ -1,35 +1,35 @@
 import { useEffect, useState } from "react";
 import { ApiError, api } from "../api/client";
-import type { CalibrationState } from "../api/types";
-import { useGcs } from "../state/store";
-import { Badge, Panel, formatTime } from "./primitives";
+import type { CalibrationState, SectorCoverage } from "../api/types";
+import { useGcs, useTick } from "../state/store";
+import { Icon } from "./common/Icon";
+import { Chip, Empty, Panel, formatClock, formatTime } from "./primitives";
 
 /**
  * Mission control.
  *
- * Every button here issues an audited REST command and then reports what the
- * backend actually said. It never renders "done": an accepted command is shown
- * as ACCEPTED, and the operator watches the mission state and telemetry to see
- * whether the aircraft complied. There is no stick-level control, by design --
- * "Manual Control" parks the aircraft so a pilot takes over on the transmitter.
+ * Every button issues an audited REST command and then reports what the backend
+ * actually said. It never renders "done": an accepted command is shown as
+ * ACCEPTED, and the operator watches mission state and telemetry to see whether
+ * the aircraft complied. ACCEPTED is not SUCCESS.
+ *
+ * There is no stick-level control, by design -- "Manual control" issues HOLD,
+ * which parks the aircraft so a pilot takes over on the transmitter.
  */
 
-interface Outcome {
-  label: string;
-  ok: boolean;
-  detail: string;
-  at: string;
-}
+type Outcome = { label: string; state: "ACCEPTED" | "REFUSED"; detail: string; at: string };
 
-export function MissionControlPanel() {
+export function MissionControlPanel({ coverage }: { coverage: SectorCoverage | null }) {
   const gcs = useGcs();
-  const missionId = gcs.mission?.id ?? null;
+  useTick(1000);
 
+  const missionId = gcs.mission?.id ?? null;
   const [busy, setBusy] = useState<string | null>(null);
   const [outcome, setOutcome] = useState<Outcome | null>(null);
-  const [calibration, setCalibration] = useState<{ calibrated: boolean; state: CalibrationState } | null>(
-    null,
-  );
+  const [calibration, setCalibration] = useState<{
+    calibrated: boolean;
+    state: CalibrationState;
+  } | null>(null);
 
   // Delivery readiness, surfaced up front rather than at the moment aid is
   // needed. The backend answers 409 while the energy model is UNCALIBRATED.
@@ -44,26 +44,34 @@ export function MissionControlPanel() {
     return () => controller.abort();
   }, []);
 
-  const run = async (label: string, action: () => Promise<unknown>) => {
+  const elapsed =
+    gcs.missionElapsedS === null || gcs.missionClockAt === null
+      ? null
+      : gcs.missionElapsedS + (performance.now() - gcs.missionClockAt) / 1000;
+
+  const run = async (label: string, action: "pause" | "resume" | "rtl-all" | "abort", body?: unknown) => {
+    if (!missionId) return;
     setBusy(label);
     setOutcome(null);
     try {
-      const result = (await action()) as { status?: number; data?: unknown };
-      // Deliberately not "success". The command was accepted; whether the
-      // aircraft complied is observed through telemetry, not inferred here.
+      const result = (await api.missionAction(missionId, action, body)) as { status?: number };
       setOutcome({
         label,
-        ok: true,
-        detail: `Accepted by the backend (HTTP ${result?.status ?? 200}). Watch mission state and telemetry to confirm the aircraft complied.`,
+        state: "ACCEPTED",
+        detail: `Backend accepted (HTTP ${result?.status ?? 200}). Watch mission state and telemetry to confirm the aircraft complied.`,
         at: new Date().toISOString(),
       });
       gcs.refresh();
     } catch (cause) {
-      const detail =
-        cause instanceof ApiError
-          ? `${cause.code}: ${cause.message}`
-          : "The command could not be sent.";
-      setOutcome({ label, ok: false, detail, at: new Date().toISOString() });
+      setOutcome({
+        label,
+        state: "REFUSED",
+        detail:
+          cause instanceof ApiError
+            ? `${cause.code}: ${cause.message}`
+            : "The command could not be sent.",
+        at: new Date().toISOString(),
+      });
     } finally {
       setBusy(null);
     }
@@ -73,66 +81,94 @@ export function MissionControlPanel() {
     const reason = window.prompt(
       "Abort requires a reason. It is written to the audit log.\n\nReason:",
     );
-    if (!reason || !missionId) return;
-    void run("Abort", () => api.missionAction(missionId, "abort", { reason }));
+    if (!reason) return;
+    void run("Abort", "abort", { reason });
   };
 
-  const rtlAll = () => {
-    if (!missionId) return;
-    if (
-      !window.confirm(
-        "Return all aircraft to launch?\n\nPX4 flies the return. The GCS tracks whether each aircraft entered the mode.",
-      )
-    )
-      return;
-    void run("RTL all", () => api.missionAction(missionId, "rtl-all"));
-  };
-
+  const measured = coverage === null ? 0 : coverage.sector_count - coverage.unmeasured_sectors;
+  const haveCoverage = coverage !== null && coverage.sector_count > 0 && measured > 0;
   const deliveryBlocked = calibration ? !calibration.calibrated : true;
 
   return (
     <Panel
       title="Mission Control"
+      icon="target"
       actions={
         gcs.mission ? (
-          <Badge tone={gcs.missionActive ? "ok" : "neutral"}>
+          <Chip tone={gcs.missionActive ? "ok" : "neutral"}>
             {gcs.mission.state.replace(/_/g, " ")}
-          </Badge>
+          </Chip>
         ) : (
-          <Badge tone="neutral">NO MISSION</Badge>
+          <Chip tone="neutral">NO MISSION</Chip>
         )
       }
     >
       {!missionId ? (
-        <div className="table__empty">
-          No active mission. Create one with <code>POST /api/v1/missions</code>.
-        </div>
+        <Empty icon="target" title="No active mission">
+          Create or select a mission to begin. Missions are created with{" "}
+          <code>POST /api/v1/missions</code>.
+        </Empty>
       ) : (
         <>
-          <div className="btngrid">
+          <div className="mc__name">
+            <Icon name="target" size={15} style={{ color: "var(--cy)" }} />
+            <span className="mc__t">{gcs.mission?.name}</span>
+          </div>
+          <div className="mc__sub">
+            <span
+              className="dot"
+              style={{ color: `var(--${gcs.missionActive ? "ok" : "unk"})` }}
+            />
+            {gcs.missionActive ? "Active mission" : "Not started"}
+            <span className="spacer" />
+            <span className="mono">{formatClock(elapsed)}</span>
+          </div>
+
+          <div className="barline">
+            <span>Sector coverage</span>
+            <span>
+              {haveCoverage
+                ? `${Math.round(coverage.coverage_fraction * 100)}%`
+                : "NO DATA"}
+            </span>
+          </div>
+          <div
+            className="bar"
+            title={
+              haveCoverage
+                ? `${measured} of ${coverage.sector_count} sectors have reported measured progress`
+                : "No sector has reported measured progress. A sector nobody has flown is NOT_STARTED, not 0%."
+            }
+          >
+            {haveCoverage ? <i style={{ width: `${coverage.coverage_fraction * 100}%` }} /> : null}
+          </div>
+
+          <div className="mc__stats">
+            <div className="mc__s">
+              <span className="mc__sv">
+                {coverage === null ? "--" : `${measured}/${coverage.sector_count}`}
+              </span>
+              <span className="mc__sl">Sectors</span>
+            </div>
+            <div className="mc__s">
+              <span className="mc__sv">{gcs.survivorsFound}</span>
+              <span className="mc__sl">Survivors</span>
+            </div>
+            <div className="mc__s">
+              <span className="mc__sv">{gcs.survivorsDelivered}</span>
+              <span className="mc__sl">Delivered</span>
+            </div>
+          </div>
+
+          <div className="btnrow">
             <button
               type="button"
-              className="btn"
+              className="btn btn--cy"
               disabled={busy !== null || !gcs.missionActive}
-              onClick={() => void run("Pause", () => api.missionAction(missionId, "pause"))}
+              onClick={() => void run("Pause", "pause")}
             >
+              <Icon name="pause" size={13} />
               Pause
-            </button>
-            <button
-              type="button"
-              className="btn"
-              disabled={busy !== null || gcs.mission?.state !== "PAUSED"}
-              onClick={() => void run("Resume", () => api.missionAction(missionId, "resume"))}
-            >
-              Resume
-            </button>
-            <button
-              type="button"
-              className="btn btn--warn"
-              disabled={busy !== null}
-              onClick={rtlAll}
-            >
-              Return to Launch
             </button>
             <button
               type="button"
@@ -140,69 +176,89 @@ export function MissionControlPanel() {
               disabled={busy !== null}
               onClick={abort}
             >
+              <Icon name="abort" size={13} />
               Abort
             </button>
-            <button
-              type="button"
-              className="btn btn--primary"
-              disabled={busy !== null}
-              onClick={() => void run("Preflight", () => api.preflight(missionId))}
-            >
-              Run Preflight
-            </button>
+          </div>
+
+          <div className="btnrow" style={{ marginTop: 8 }}>
             <button
               type="button"
               className="btn"
-              disabled
-              title="Delivery dispatch is created against a confirmed survivor from the survivors table, not from here."
+              disabled={busy !== null || gcs.mission?.state !== "PAUSED"}
+              onClick={() => void run("Resume", "resume")}
             >
-              Send Delivery
+              <Icon name="play" size={13} />
+              Resume
+            </button>
+            <button
+              type="button"
+              className="btn btn--warn"
+              disabled={busy !== null}
+              onClick={() => {
+                if (
+                  !window.confirm(
+                    "Return all aircraft to launch?\n\nPX4 flies the return. The GCS tracks whether each aircraft entered the mode.",
+                  )
+                )
+                  return;
+                void run("RTL all", "rtl-all");
+              }}
+            >
+              <Icon name="home" size={13} />
+              RTL All
             </button>
           </div>
 
           {deliveryBlocked ? (
-            <div className="blocked" style={{ marginTop: 9 }}>
-              <strong>DELIVERY DISPATCH BLOCKED — energy model UNCALIBRATED.</strong>
-              <br />
-              Nobody has measured what a delivery costs this airframe, so the backend refuses to
-              decide an aircraft can get home. Fly the calibration profile in{" "}
-              <code>docs/hardware-validation.md</code>, then run{" "}
-              <code>scripts/calibrate_energy.py compute</code>.
+            <div className="callout" style={{ marginTop: 10 }}>
+              <Icon name="alert" size={14} className="callout__ic" />
+              <div>
+                <strong>DELIVERY DISPATCH BLOCKED</strong> — energy model UNCALIBRATED. Return
+                capability is <strong>UNKNOWN</strong>, so the backend refuses every dispatch.
+                Fly the calibration profile, then run{" "}
+                <code>scripts/calibrate_energy.py compute</code>.
+              </div>
             </div>
           ) : (
-            <p className="note" style={{ marginTop: 9 }}>
-              Energy model calibrated
-              {calibration?.state.calibrated_on ? ` on ${calibration.state.calibrated_on}` : ""}
-              {calibration?.state.airframe ? ` for ${calibration.state.airframe}` : ""}
-              {typeof calibration?.state.sample_count === "number"
-                ? ` from ${calibration.state.sample_count} measured flights`
-                : ""}
-              .
-            </p>
+            <div className="callout callout--info" style={{ marginTop: 10 }}>
+              <Icon name="check" size={14} className="callout__ic" />
+              <div>
+                Energy model calibrated
+                {calibration?.state.calibrated_on ? ` ${calibration.state.calibrated_on}` : ""}
+                {typeof calibration?.state.sample_count === "number"
+                  ? ` from ${calibration.state.sample_count} measured flights`
+                  : ""}
+                .
+              </div>
+            </div>
           )}
 
           {outcome ? (
             <div
-              className={outcome.ok ? "blocked" : "login__error"}
-              style={{
-                marginTop: 9,
-                ...(outcome.ok
-                  ? { background: "var(--info-dim)", borderColor: "var(--info)", color: "#d6ecff" }
-                  : {}),
-              }}
+              className={`callout ${outcome.state === "ACCEPTED" ? "callout--info" : "callout--bad"}`}
+              style={{ marginTop: 8 }}
+              role="status"
             >
-              <strong>
-                {outcome.label}: {outcome.ok ? "ACCEPTED" : "REFUSED"}
-              </strong>{" "}
-              <span style={{ color: "var(--text-faint)" }}>{formatTime(outcome.at)}</span>
-              <br />
-              {outcome.detail}
+              <Icon
+                name={outcome.state === "ACCEPTED" ? "check" : "close"}
+                size={14}
+                className="callout__ic"
+              />
+              <div>
+                <strong>
+                  {outcome.label}: {outcome.state}
+                </strong>{" "}
+                <span style={{ color: "var(--t4)" }}>{formatTime(outcome.at)}</span>
+                <br />
+                {outcome.detail}
+              </div>
             </div>
           ) : null}
 
-          <p className="note" style={{ marginTop: 9 }}>
+          <p className="note" style={{ marginTop: 10 }}>
             PX4 owns the aircraft. These controls supervise a mission; they do not override a
-            failsafe. There is no stick-level control over the network — use a transmitter.
+            failsafe. There is no stick-level control over the network.
           </p>
         </>
       )}
@@ -210,7 +266,7 @@ export function MissionControlPanel() {
   );
 }
 
-/** Per-aircraft actions. "Manual Control" means: park it, a pilot takes over. */
+/** Per-aircraft actions. "Manual control" means: park it, a pilot takes over. */
 export function DroneActionsPanel({ droneId }: { droneId: string | null }) {
   const gcs = useGcs();
   const [busy, setBusy] = useState(false);
@@ -226,11 +282,13 @@ export function DroneActionsPanel({ droneId }: { droneId: string | null }) {
     setMessage(null);
     try {
       await action();
-      setMessage(`${label} accepted for ${droneId}. Confirm through telemetry.`);
+      setMessage(`${label} ACCEPTED for ${droneId}. Confirm through telemetry.`);
       gcs.refresh();
     } catch (cause) {
       setMessage(
-        cause instanceof ApiError ? `${label} refused — ${cause.code}: ${cause.message}` : `${label} failed`,
+        cause instanceof ApiError
+          ? `${label} REFUSED — ${cause.code}: ${cause.message}`
+          : `${label} failed`,
       );
     } finally {
       setBusy(false);
@@ -238,8 +296,8 @@ export function DroneActionsPanel({ droneId }: { droneId: string | null }) {
   };
 
   return (
-    <Panel title={`${droneId} Actions`}>
-      <div className="btngrid">
+    <Panel title={`${droneId} Actions`} icon="drone">
+      <div className="btnrow">
         <button
           type="button"
           className="btn btn--warn"
@@ -253,7 +311,8 @@ export function DroneActionsPanel({ droneId }: { droneId: string | null }) {
           }
           title="Parks the aircraft. This is the only 'manual control' there is — stick input comes from the transmitter."
         >
-          Manual Control (Hold)
+          <Icon name="pause" size={13} />
+          Hold
         </button>
         <button
           type="button"
@@ -263,7 +322,8 @@ export function DroneActionsPanel({ droneId }: { droneId: string | null }) {
             void act("RTL", () => api.droneRtl(droneId), `Command ${droneId} to return to launch?`)
           }
         >
-          Return to Launch
+          <Icon name="home" size={13} />
+          RTL
         </button>
       </div>
       {!card.online ? (
@@ -272,7 +332,7 @@ export function DroneActionsPanel({ droneId }: { droneId: string | null }) {
         </p>
       ) : null}
       {message ? (
-        <p className="note" style={{ marginTop: 8, color: "var(--text)" }}>
+        <p className="note" style={{ marginTop: 8, color: "var(--t2)" }}>
           {message}
         </p>
       ) : null}

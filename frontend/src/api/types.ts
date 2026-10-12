@@ -223,6 +223,25 @@ export interface Sector {
   blocked_reason: string | null;
 }
 
+/**
+ * `GET /missions/{id}/sectors/coverage`.
+ *
+ * `coverage_fraction` counts only sectors that actually reported progress.
+ * `unmeasured_sectors` is how much of the search area is unaccounted for, and
+ * must be surfaced rather than folded into the percentage.
+ */
+export interface SectorCoverage {
+  sector_count: number;
+  by_state: Record<string, number>;
+  by_progress_status: Record<string, number>;
+  total_area_m2: number;
+  covered_area_m2: number;
+  unmeasured_area_m2: number;
+  coverage_fraction: number;
+  completed: number;
+  unmeasured_sectors: number;
+}
+
 export interface Survivor {
   id: string;
   mission_id: string;

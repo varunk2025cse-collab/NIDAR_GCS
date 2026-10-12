@@ -1,144 +1,197 @@
-import type { ComponentHealth } from "../api/types";
+import type { ComponentHealth, MissionEvent } from "../api/types";
 import { useGcs } from "../state/store";
+import { Icon, type IconName } from "./common/Icon";
 import {
-  Badge,
+  Chip,
+  Empty,
   NotImplemented,
   Panel,
   formatTime,
   severityTone,
   statusTone,
+  toneVar,
 } from "./primitives";
 
-/** Backend component name -> the label the blueprint uses. */
-const LABELS: Record<string, string> = {
-  px4: "PX4 (All Drones)",
-  mavlink: "MAVLink Link",
-  database: "Database",
-  network_local: "Network (Local)",
-  drone_connections: "Drone Links",
-  websocket: "WebSocket Clients",
-  storage: "Storage",
-  event_bus: "Event Bus",
-  safety_engine: "Safety Engine",
+/** Backend component name -> display label + icon. */
+const META: Record<string, { label: string; icon: IconName }> = {
+  px4: { label: "PX4 (All Drones)", icon: "cpu" },
+  mavlink: { label: "MAVLink Link", icon: "link" },
+  database: { label: "Database", icon: "database" },
+  network_local: { label: "Network (Local)", icon: "signal" },
+  drone_connections: { label: "Drone Links", icon: "drone" },
+  websocket: { label: "WebSocket Clients", icon: "activity" },
+  storage: { label: "Storage", icon: "database" },
+  event_bus: { label: "Event Bus", icon: "activity" },
+  safety_engine: { label: "Safety Engine", icon: "shield" },
 };
 
 /**
  * Rows the dashboard blueprint asks for that have no physical source in this
- * architecture. They are shown struck through and labelled, because the one
- * thing we must not do is render them as OK. See docs/dashboard-data-sources.md.
+ * architecture. The one thing we must not do is render them green.
+ * See docs/dashboard-data-sources.md.
  */
-const UNSOURCED: { label: string; why: string }[] = [
+const UNSOURCED: { label: string; icon: IconName; why: string }[] = [
   {
     label: "ROS 2 Bridge",
+    icon: "cpu",
     why: "There is no ROS 2 in this architecture. The companion computers talk HTTP to the backend and MAVLink to PX4. Either remove this row or add a real bridge and a health check for it.",
   },
   {
     label: "Power System",
+    icon: "power",
     why: "No UPS or ground-station power telemetry is collected. A real UPS/battery monitor on the ground station would be needed to populate this.",
   },
 ];
 
-function HealthRow({ component }: { component: ComponentHealth }) {
-  const latency =
-    component.latency_ms === null ? null : `${component.latency_ms.toFixed(0)} ms`;
+const WORD: Record<string, string> = {
+  OK: "ONLINE",
+  DEGRADED: "DEGRADED",
+  FAILED: "OFFLINE",
+  UNKNOWN: "UNKNOWN",
+};
+
+function Row({ component }: { component: ComponentHealth }) {
+  const meta = META[component.component] ?? { label: component.component, icon: "activity" as const };
+  const tone = statusTone(component.status);
   return (
-    <div className="healthrow">
-      <span className="healthrow__name" title={component.detail ?? undefined}>
-        {LABELS[component.component] ?? component.component}
+    <div className="hrow" title={component.detail ?? undefined}>
+      <Icon name={meta.icon} size={14} className="hrow__ic" />
+      <span className="hrow__n">{meta.label}</span>
+      {component.latency_ms !== null ? (
+        <span className="hrow__s" style={{ color: "var(--t4)" }}>
+          {component.latency_ms.toFixed(0)}ms
+        </span>
+      ) : null}
+      <span className="hrow__s" style={{ color: `var(--${toneVar(tone)})` }}>
+        {WORD[component.status] ?? component.status}
       </span>
-      {latency ? <span className="healthrow__detail">{latency}</span> : null}
-      <Badge tone={statusTone(component.status)}>{component.status}</Badge>
+      <span className="dot" style={{ color: `var(--${toneVar(tone)})` }} />
     </div>
   );
 }
 
-export function SystemHealthPanel() {
+export function HealthPanel({ compact = true }: { compact?: boolean }) {
   const { health } = useGcs();
+
+  const shown = health
+    ? compact
+      ? health.components.filter((c) =>
+          ["database", "px4", "mavlink", "network_local"].includes(c.component),
+        )
+      : health.components
+    : [];
 
   return (
     <Panel
       title="System Health"
+      icon="shield"
       actions={
         health ? (
-          <Badge tone={statusTone(health.status)} title={`Checked ${formatTime(health.checked_at)}`}>
-            {health.status}
-          </Badge>
+          <Chip tone={statusTone(health.status)} title={`Checked ${formatTime(health.checked_at)}`}>
+            {health.status === "OK" ? "ALL NOMINAL" : health.status}
+          </Chip>
         ) : null
       }
     >
       {!health ? (
-        <div className="table__empty">No health data — the backend has not reported yet.</div>
+        <Empty icon="shield" title="No health data">
+          The backend has not reported a health check yet.
+        </Empty>
       ) : (
         <>
-          {health.components.map((component) => (
-            <HealthRow key={component.component} component={component} />
+          {shown.map((component) => (
+            <Row key={component.component} component={component} />
           ))}
 
           {UNSOURCED.map((row) => (
-            <div className="healthrow healthrow--notimpl" key={row.label}>
-              <span className="healthrow__name" title={row.why}>
-                {row.label}
-              </span>
+            <div className="hrow hrow--notimpl" key={row.label} title={row.why}>
+              <Icon name={row.icon} size={14} className="hrow__ic" />
+              <span className="hrow__n">{row.label}</span>
               <NotImplemented why={row.why} />
             </div>
           ))}
-
-          <p className="note" style={{ marginTop: 8 }}>
-            A component that cannot be measured reports UNKNOWN, never OK. The two struck-through
-            rows are in the dashboard blueprint but have no source in this system.
-          </p>
         </>
       )}
     </Panel>
   );
 }
 
-export function AlertsPanel() {
+export function AlertsPanel({ limit = 8 }: { limit?: number }) {
   const { alerts } = useGcs();
 
   return (
     <Panel
-      title="Active Alerts"
-      actions={<Badge tone={alerts.length ? "warn" : "ok"}>{alerts.length}</Badge>}
+      title="Recent Alerts"
+      icon="bell"
+      actions={
+        <Chip tone={alerts.length ? "bad" : "ok"}>
+          {alerts.length} {alerts.length === 1 ? "ACTIVE" : "ACTIVE"}
+        </Chip>
+      }
     >
       {alerts.length === 0 ? (
-        <div className="table__empty">No active alerts.</div>
+        <Empty icon="check" title="No active alerts">
+          Safety conditions raised by the backend will appear here.
+        </Empty>
       ) : (
-        alerts.map((alert, index) => (
-          <div
-            key={alert.alert_id ?? `${alert.code}-${alert.drone_id ?? "fleet"}-${index}`}
-            className={`alert alert--${severityTone(alert.severity)}`}
-          >
-            <div className="alert__body">
-              <div className="alert__code">
-                {alert.code}
-                {alert.drone_id ? ` · ${alert.drone_id}` : ""} · {formatTime(alert.raised_at)}
-              </div>
-              <div className="alert__msg">{alert.message}</div>
+        alerts.slice(0, limit).map((alert, index) => {
+          const tone = severityTone(alert.severity);
+          return (
+            <div
+              key={alert.alert_id ?? `${alert.code}-${alert.drone_id ?? "fleet"}-${index}`}
+              className={`arow arow--${tone === "bad" ? "bad" : tone === "warn" ? "warn" : "info"}`}
+              title={`${alert.severity} · ${alert.code}${alert.drone_id ? ` · ${alert.drone_id}` : ""}`}
+            >
+              <span className="arow__t">{formatTime(alert.raised_at)}</span>
+              <span className="arow__i">
+                <Icon name={tone === "bad" ? "alert" : tone === "warn" ? "alert" : "activity"} size={14} />
+              </span>
+              <span className="arow__m">
+                {alert.drone_id ? <b>{alert.drone_id} </b> : null}
+                {alert.message}
+              </span>
             </div>
-            <Badge tone={severityTone(alert.severity)}>{alert.severity}</Badge>
-          </div>
-        ))
+          );
+        })
       )}
     </Panel>
   );
 }
 
-export function EventLogPanel() {
+/** Turns an event frame into a line an operator can read at a glance. */
+function describe(event: MissionEvent): string {
+  const payload = (event.payload ?? {}) as Record<string, unknown>;
+  const type = event.event_type;
+  const pretty = type.replace(/_/g, " ").toLowerCase();
+
+  if (payload["survivor_code"]) return `${pretty} — ${payload["survivor_code"]}`;
+  if (payload["sector_code"]) return `${pretty} — sector ${payload["sector_code"]}`;
+  if (payload["state"]) return `${pretty} — ${String(payload["state"]).replace(/_/g, " ")}`;
+  if (payload["message"]) return String(payload["message"]);
+  return pretty;
+}
+
+export function EventsPanel({ limit = 40 }: { limit?: number }) {
   const { events } = useGcs();
 
   return (
-    <Panel title="Mission Timeline" actions={<span className="note">{events.length} events</span>}>
+    <Panel
+      title="Mission Timeline"
+      icon="activity"
+      actions={<span className="note">{events.length} events</span>}
+    >
       {events.length === 0 ? (
-        <div className="table__empty">No events yet.</div>
+        <Empty icon="activity" title="No events yet">
+          Everything the backend publishes on its event bus appears here, newest first.
+        </Empty>
       ) : (
-        <div className="eventlog">
-          {events.slice(0, 60).map((event, index) => (
-            <div className="eventlog__row" key={`${event.occurred_at}-${index}`}>
-              <span className="eventlog__time">{formatTime(event.occurred_at)}</span>
-              <span className="eventlog__type" title={event.message ?? event.event_type}>
-                {event.drone_id ? `${event.drone_id} ` : ""}
-                {event.event_type}
+        <div>
+          {events.slice(0, limit).map((event, index) => (
+            <div className="ev" key={`${event.occurred_at}-${index}`}>
+              <span className="ev__t">{formatTime(event.occurred_at)}</span>
+              <span className="ev__m" title={event.event_type}>
+                {event.drone_id ? <b>{event.drone_id} </b> : null}
+                {describe(event)}
               </span>
             </div>
           ))}

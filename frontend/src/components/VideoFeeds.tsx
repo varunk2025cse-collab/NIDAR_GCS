@@ -1,59 +1,71 @@
 import { useEffect, useState } from "react";
 import { api } from "../api/client";
 import type { Camera } from "../api/types";
-import { Badge, NotImplemented, Panel } from "./primitives";
+import { Icon } from "./common/Icon";
+import { Chip, Empty, NotImplemented, Panel } from "./primitives";
 
 /**
- * Live video.
+ * Camera feeds.
  *
  * Video never passes through the backend: the player connects straight to the
- * companion computer's `stream_url`. The backend only publishes the inventory
- * and a reachability probe.
+ * companion computer's `stream_url`. The backend publishes only the inventory
+ * and a TCP reachability probe.
  *
- * Two honesty points the blueprint gets wrong:
+ * Two things the blueprint gets wrong and this panel refuses to repeat:
  *
- *  - The LIVE badge here means "the Pi is listening on that port", which is all
- *    a TCP probe can prove. It does NOT mean frames are arriving. Only the
- *    player knows that, so the badge says `REACHABLE`, not `LIVE`.
- *  - A browser cannot play RTSP. Where the stream is RTSP we say so and give the
- *    operator the URL to open in a real player, rather than showing a dead black
- *    rectangle that looks like a camera fault.
+ *  - The badge reads REACHABLE, not LIVE. A TCP probe proves the Pi is
+ *    listening on that port; it does not prove frames are flowing. Only the
+ *    player knows that.
+ *  - A browser cannot decode RTSP. Where a camera is RTSP we say so and give
+ *    the URL to open in a real player, rather than a black rectangle that looks
+ *    like a camera fault.
  */
 
-const PLAYABLE_IN_BROWSER = new Set(["HLS", "WEBRTC", "MJPEG", "HTTP", "WHEP"]);
+const BROWSER_PLAYABLE = new Set(["HLS", "MJPEG", "HTTP"]);
+const NEEDS_SIGNALLING = new Set(["WEBRTC", "WHEP"]);
 
-function VideoTile({ camera }: { camera: Camera }) {
+function Tile({ camera }: { camera: Camera }) {
   const protocol = camera.protocol.toUpperCase();
   const reachable = camera.stream_status?.reachable;
-  const playable = PLAYABLE_IN_BROWSER.has(protocol);
+
+  const status =
+    reachable === true
+      ? { tone: "ok" as const, label: "REACHABLE" }
+      : reachable === false
+        ? { tone: "bad" as const, label: "UNREACHABLE" }
+        : { tone: "unknown" as const, label: "UNKNOWN" };
 
   return (
-    <div className="videotile">
-      <div className="videotile__head">
-        <span className="videotile__label">{camera.drone_id}</span>
-        <span style={{ color: "var(--text-dim)" }}>{camera.label}</span>
-        <span style={{ flex: 1 }} />
+    <div className="vtile">
+      <div className="vtile__h">
+        <Icon name="camera" size={13} />
+        <span className="vtile__id">{camera.drone_id}</span>
+        <span style={{ color: "var(--t3)" }}>{camera.label}</span>
+        <span className="spacer" />
         {camera.ai_overlay ? (
-          <Badge tone="info" title="Detection boxes are burnt into the stream by the companion computer">
+          <Chip tone="vi" title="Detection boxes are burnt into the stream by the companion computer">
             AI
-          </Badge>
+          </Chip>
         ) : null}
-        <Badge
-          tone={reachable === true ? "ok" : reachable === false ? "bad" : "unknown"}
+        <Chip
+          tone={status.tone}
           title={
             reachable === true
               ? "The companion computer is accepting connections on this port. This does NOT prove frames are flowing."
               : reachable === false
-                ? camera.stream_status?.detail ?? "The stream endpoint did not accept a connection."
+                ? (camera.stream_status?.detail ?? "The stream endpoint did not accept a connection.")
                 : "Reachability has not been probed."
           }
         >
-          {reachable === true ? "REACHABLE" : reachable === false ? "UNREACHABLE" : "UNKNOWN"}
-        </Badge>
+          {status.label}
+        </Chip>
       </div>
 
       {!camera.enabled ? (
-        <div className="videotile__placeholder">Camera disabled in configuration.</div>
+        <div className="vtile__ph">
+          <Icon name="camera" size={22} style={{ opacity: 0.4 }} />
+          Camera disabled in configuration
+        </div>
       ) : protocol === "MJPEG" || protocol === "HTTP" ? (
         <img
           src={camera.stream_url}
@@ -66,23 +78,28 @@ function VideoTile({ camera }: { camera: Camera }) {
           autoPlay
           muted
           playsInline
-          controls={false}
           style={{ width: "100%", height: "100%", objectFit: "cover" }}
         />
-      ) : playable ? (
-        <div className="videotile__placeholder">
-          {protocol} stream. Needs a signalling client in the player.
+      ) : NEEDS_SIGNALLING.has(protocol) ? (
+        <div className="vtile__ph">
+          <Icon name="camera" size={22} style={{ opacity: 0.4 }} />
+          <strong>{protocol}</strong>
+          needs a signalling client in the player
         </div>
       ) : (
-        <div className="videotile__placeholder">
-          <strong>{protocol} is not playable in a browser.</strong>
-          <br />
-          Open the URL below in VLC or mpv, or put a WebRTC/HLS gateway in front of it on the Pi.
+        <div className="vtile__ph">
+          <Icon name="camera" size={22} style={{ opacity: 0.4 }} />
+          <strong>VIDEO PLAYBACK NOT AVAILABLE</strong>
+          {protocol} cannot be decoded by a browser. Open the URL in VLC or mpv, or put a
+          WebRTC/HLS gateway in front of it on the Pi.
         </div>
       )}
 
-      <div className="videotile__url" title={`${camera.stream_url} — ${camera.transport_note}`}>
-        {camera.stream_url}
+      <div className="vtile__f" title={`${camera.stream_url} — ${camera.transport_note}`}>
+        {protocol}
+        {camera.resolution ? ` · ${camera.resolution}` : ""}
+        {camera.framerate ? ` · ${camera.framerate} FPS` : ""}
+        {BROWSER_PLAYABLE.has(protocol) ? "" : " · external player"}
       </div>
     </div>
   );
@@ -96,41 +113,45 @@ export function VideoFeedsPanel() {
     const controller = new AbortController();
     api
       .cameras(controller.signal)
-      .then((data) => {
-        const list = Array.isArray(data) ? data : (data.cameras ?? []);
-        setCameras(list);
-      })
+      .then((data) => setCameras(Array.isArray(data) ? data : (data.cameras ?? [])))
       .catch(() => {
         if (!controller.signal.aborted) setError("Could not load the camera inventory.");
       });
     return () => controller.abort();
   }, []);
 
+  const reachable = cameras?.filter((c) => c.stream_status?.reachable === true).length ?? 0;
+
   return (
     <Panel
       title="Live Video Feeds"
+      icon="camera"
       actions={
         <>
-          <span className="note" title="No gimbal control endpoint exists in the backend.">
-            <NotImplemented why="No gimbal/PTZ endpoint exists. Pan/tilt/zoom controls would do nothing, so they are not shown." />
-          </span>
-          {cameras ? <span className="note">{cameras.length} cameras</span> : null}
+          <NotImplemented why="No gimbal/PTZ endpoint exists in the backend. Pan/tilt/zoom controls would do nothing, so they are not shown." />
+          {cameras ? (
+            <Chip tone={reachable > 0 ? "ok" : "unknown"}>
+              {reachable}/{cameras.length} REACHABLE
+            </Chip>
+          ) : null}
         </>
       }
-      bodyClassName="panel__body--flush"
+      bodyClassName="panel__b--flush"
     >
       {error ? (
-        <div className="table__empty">{error}</div>
+        <Empty icon="camera" title="Camera inventory unavailable">
+          {error}
+        </Empty>
       ) : !cameras ? (
-        <div className="table__empty">Loading camera inventory…</div>
+        <Empty icon="camera" title="Loading cameras" />
       ) : cameras.length === 0 ? (
-        <div className="table__empty">
-          No cameras configured. See <code>config/cameras.yaml</code>.
-        </div>
+        <Empty icon="camera" title="No cameras configured">
+          Declare them in <code>config/cameras.yaml</code>.
+        </Empty>
       ) : (
-        <div className="videogrid">
+        <div className="vgrid">
           {cameras.map((camera) => (
-            <VideoTile key={camera.camera_id} camera={camera} />
+            <Tile key={camera.camera_id} camera={camera} />
           ))}
         </div>
       )}
